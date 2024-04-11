@@ -33,6 +33,7 @@ def read_value(f, val_type):
         raise NotImplementedError(f"Data type {val_type} not implemented")
 
 # https://github.com/ggerganov/ggml/blob/master/docs/gguf.md
+# https://github.com/99991/pygguf/blob/main/gguf.py
 def load_gguf(weights):    
     with open(weights, "rb") as f:
         f.seek(0)
@@ -46,9 +47,29 @@ def load_gguf(weights):
             name = read_string(f)
             val_type = read_value(f, ValueType.UINT32.value)
             val = read_value(f, val_type)
-            print(name)
-            print(val_type)
-    print('Done')
+            print(f'{name=},{val_type=}')            
+            if val_type != ValueType.ARRAY.value:
+                print(f'{val=}')
+
+        tensorinfo = {}
+        for _ in range(n_tensors):
+            name = read_string(f)
+            n_dims = read_value(f, ValueType.UINT32.value)
+            shape = [read_value(f, ValueType.UINT64.value) for _ in range(n_dims)]
+            ggml_type = read_value(f, ValueType.UINT32.value)
+            offset = read_value(f, ValueType.UINT64.value)
+
+            tensorinfo[name] = {
+                "ggml_type": ggml_type,
+                "shape": shape,
+                "offset": offset,
+            }
+        # current position
+        start = f.tell()
+        print(tensorinfo)
+    
+        # TODO: figure out actual offsets
+        # return offset + (ALIGNMENT - (offset % ALIGNMENT)) % ALIGNMENT;
 
 
 if __name__ == "__main__":
