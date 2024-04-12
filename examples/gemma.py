@@ -1,7 +1,11 @@
 import struct 
+import numpy as np
+from tinygrad import Tensor
+import tinygrad.nn as nn
 from enum import Enum
 
 WEIGHTS_FILE = "/home/dhaya/projects/mytinygrad/tinygrad/weights/gemma-2b.gguf"
+DEFAULT_ALIGNMENT = 32
 
 class ValueType(Enum):
     UINT32 = 4
@@ -31,6 +35,10 @@ def read_value(f, val_type):
         return [read_value(f, data_type) for _ in range(count)]        
     else:
         raise NotImplementedError(f"Data type {val_type} not implemented")
+
+
+def align_offset(offset, alignment):
+    return offset + (alignment - (offset % alignment)) % alignment
 
 # https://github.com/ggerganov/ggml/blob/master/docs/gguf.md
 # https://github.com/99991/pygguf/blob/main/gguf.py
@@ -64,13 +72,37 @@ def load_gguf(weights):
                 "shape": shape,
                 "offset": offset,
             }
-        # current position
-        start = f.tell()
-        print(tensorinfo)
-    
-        # TODO: figure out actual offsets
-        # return offset + (ALIGNMENT - (offset % ALIGNMENT)) % ALIGNMENT;
+        
+        alignment = info.get('general.alignment', DEFAULT_ALIGNMENT)
+        current = f.tell()
+        header_end = align_offset(current, alignment)
+        f.read(header_end - current)
 
+        load_gguf_tensors(f, header_end, alignment, tensorinfo)
+        return info, tensorinfo
+
+# start is the next offset to start reading from
+def load_gguf_tensors(f, start, alignment, tensorinfo):
+    for name, info in tensorinfo.items():
+        print(name, info['shape'], info['ggml_type'])
+        ggml_type = info['ggml_type']
+        if ggml_type != 0:
+            # only fp32 is supported at this point
+            raise NotImplementedError(f'Type ${ggml_type} not implemented')
+
+        shape = tuple(info['shape'])
+        num_bytes = np.prod(shape) * 4 # * 4 because fp32
+        bytes_read = f.read(align_offset(num_bytes, alignment))
+        bytes_read = bytes_read[:num_bytes]
+        values = np.frombuffer(bytes_read, dtype=np.float32)
+        t = Tensor(values)
+        t = t.reshape(shape)
+        print(f'shape = {t.shape}')
+        info['weights'] = t
+
+        #TODO: test for correctness, memory requirements at the end.
+        # it got killed because of OOM error.
+        
 
 if __name__ == "__main__":
     print("hello world")
