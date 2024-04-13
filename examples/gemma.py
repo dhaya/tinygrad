@@ -3,9 +3,11 @@ import numpy as np
 from tinygrad import Tensor
 import tinygrad.nn as nn
 from enum import Enum
+from sentencepiece import SentencePieceProcessor, sentencepiece_model_pb2
 
 WEIGHTS_FILE = "/home/dhaya/projects/mytinygrad/tinygrad/weights/gemma-2b.gguf"
 DEFAULT_ALIGNMENT = 32
+BYTE_TOKEN_TYPE = 6 #from gguf spec
 
 class ValueType(Enum):
     UINT32 = 4
@@ -58,6 +60,7 @@ def load_gguf(weights):
             print(f'{name=},{val_type=}')            
             if val_type != ValueType.ARRAY.value:
                 print(f'{val=}')
+            info[name] = val
 
         tensorinfo = {}
         for _ in range(n_tensors):
@@ -78,7 +81,8 @@ def load_gguf(weights):
         header_end = align_offset(current, alignment)
         f.read(header_end - current)
 
-        load_gguf_tensors(f, header_end, alignment, tensorinfo)
+        #load_gguf_tensors(f, header_end, alignment, tensorinfo)
+        print('Done')
         return info, tensorinfo
 
 # start is the next offset to start reading from
@@ -95,17 +99,44 @@ def load_gguf_tensors(f, start, alignment, tensorinfo):
         bytes_read = f.read(align_offset(num_bytes, alignment))
         bytes_read = bytes_read[:num_bytes]
         values = np.frombuffer(bytes_read, dtype=np.float32)
+        values = values.astype(np.float16)
+
         t = Tensor(values)
         t = t.reshape(shape)
         print(f'shape = {t.shape}')
         info['weights'] = t
 
-        #TODO: test for correctness, memory requirements at the end.
-        # it got killed because of OOM error.
+        #TODO: test for correctness, memory requirements at the end.        
         
+
+def load_tokenizer(info):
+    tokens = info['tokenizer.ggml.tokens']
+    scores = info['tokenizer.ggml.scores']
+    types = info['tokenizer.ggml.token_type']
+
+    token_model = sentencepiece_model_pb2.ModelProto()
+    for i in range(len(tokens)):
+        token = token_model.pieces.add()
+        token.piece = tokens[i]
+        token.score = scores[i]
+        token.type = types[i]
+        if token.type == BYTE_TOKEN_TYPE:
+            token_model.trainer_spec.byte_fallback = 1
+    
+    token_model.trainer_spec.unk_id = info['tokenizer.ggml.unknown_token_id']
+    token_model.trainer_spec.bos_id = info['tokenizer.ggml.bos_token_id']
+    token_model.trainer_spec.eos_id = info['tokenizer.ggml.eos_token_id']
+
+    sp = SentencePieceProcessor()
+    sp.LoadFromSerializedProto(token_model.SerializeToString())
+    print(f'sp = {sp.bos_id}')
+
+    #TODO: test the tokenizer part
+
 
 if __name__ == "__main__":
     print("hello world")
-    load_gguf(WEIGHTS_FILE)
+    info, tensor_info = load_gguf(WEIGHTS_FILE)
+    load_tokenizer(info)
 
 
