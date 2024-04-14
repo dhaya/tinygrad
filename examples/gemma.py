@@ -81,7 +81,7 @@ def load_gguf(weights):
         header_end = align_offset(current, alignment)
         f.read(header_end - current)
 
-        #load_gguf_tensors(f, header_end, alignment, tensorinfo)
+        load_gguf_tensors(f, header_end, alignment, tensorinfo)
         print('Done')
         return info, tensorinfo
 
@@ -131,7 +131,7 @@ def load_tokenizer(info):
     sp.LoadFromSerializedProto(token_model.SerializeToString())
     print(f'sp = {sp.bos_id}')
 
-    #TODO: test the tokenizer part
+    return sp
 
 
 if __name__ == "__main__":
